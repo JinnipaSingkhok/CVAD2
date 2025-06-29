@@ -1,0 +1,48 @@
+import os
+import json
+import csv
+from ultralytics import YOLO
+
+def tune_yolo(pretrained_path, data_yaml, output_dir, img_sizes, lrs, batches, epochs,optimizer):
+    os.makedirs(output_dir, exist_ok=True)
+    csv_path = os.path.join(output_dir, "results.csv")
+
+    with open(csv_path, mode='w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["Run", "imgsz", "lr", "batch", "mAP50", "mAP50-95", "Precision", "Recall"])
+
+        run_id = 0
+        for imgsz in img_sizes:
+            for lr in lrs:
+                for batch in batches:
+                    run_id += 1
+                    run_name = f"run{run_id}_img{imgsz}_lr{lr}_batch{batch}"
+
+                    model = YOLO(pretrained_path)
+                    model.train(
+                        optimizer=optimizer,  # "Adam" หรือ SGD
+                        data=data_yaml,
+                        imgsz=imgsz,
+                        epochs=epochs,
+                        batch=batch,
+                        lr0=lr,
+                        name=run_name,
+                        project=output_dir,
+                        pretrained=True,
+                        device='cpu',
+                        workers=0
+                    )
+
+                    metrics_path = os.path.join(output_dir, run_name, "results.json")
+                    if os.path.exists(metrics_path):
+                        with open(metrics_path, "r") as f_json:
+                            results = json.load(f_json)
+                            last = results[-1]
+                            mAP50 = last.get("metrics/mAP_0.5", "N/A")
+                            mAP5095 = last.get("metrics/mAP_0.5:0.95", "N/A")
+                            precision = last.get("metrics/precision(B)", "N/A")
+                            recall = last.get("metrics/recall(B)", "N/A")
+                    else:
+                        mAP50 = mAP5095 = precision = recall = "N/A"
+
+                    writer.writerow([run_name, imgsz, lr, batch, mAP50, mAP5095, precision, recall])
